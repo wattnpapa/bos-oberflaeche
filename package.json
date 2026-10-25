@@ -1,0 +1,60 @@
+{
+  "name": "@bos/oberflaeche",
+  "version": "0.0.0",
+  "description": "Gemeinsame Oberfläche von Erfassungsbogen und Meldekopf: Design-Token, Dialogschicht, Anzeigemodi, Kopfnavigation, Tipp-Schutz, Quittungen, Feld-Bausteine. Nur Darstellung und Bedienmechanik, keine Fachlogik.",
+  "license": "EUPL-1.2",
+  "author": {
+    "name": "Johannes Rudolph",
+    "email": "johannes.rudolph@thw-oldenburg.de"
+  },
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./stil/*": "./dist/stil/*"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import{cpSync,existsSync}from'node:fs';if(existsSync('src/stil'))cpSync('src/stil','dist/stil',{recursive:true})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --reporter=verbose",
+    "lint": "eslint ."
+  },
+  "peerDependencies": {
+    "@bos/eeb-format": "*",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@bos/eeb-format": "file:../eeb-format",
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.3.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^10.10.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.3.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wattnpapa/bos-oberflaeche.git"
+  }
+}

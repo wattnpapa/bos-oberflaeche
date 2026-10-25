@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Anders als im Kern MIT "DOM": dieser Baustein ist Oberfläche und darf
+    // document, window und React benutzen (ADR-004 der Meldekopf-App). Was er
+    // nicht darf, steht in eslint.config.mjs: Node, Electron, Capacitor,
+    // Rückimporte aus einer der Apps.
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "types": [],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.config.ts"]
+}

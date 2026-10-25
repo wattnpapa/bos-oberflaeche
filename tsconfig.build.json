@@ -1,0 +1,16 @@
+{
+  // Baut das ausgelieferte Paket nach dist/: JavaScript plus Typdeklarationen.
+  // Tests und Werkzeugdateien bleiben außen vor; Stylesheets kopiert das
+  // build-Skript aus src/stil nach dist/stil.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

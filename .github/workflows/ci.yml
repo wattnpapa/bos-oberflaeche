@@ -1,0 +1,34 @@
+# Prüflauf des Oberflächen-Bausteins. Die vier Schritte sind die, mit denen
+# ADR-004 seine Regeln maschinell hinterlegt:
+#
+#   lint       — keine node:-, Electron-, Capacitor- oder Rückimporte (ADR-004)
+#   typecheck  — ein Programm mit DOM-Typen, ohne Node-Typen
+#   test       — unter jsdom; dieser Baustein ist Oberfläche (ADR-004)
+#   build      — belegt, dass dist/ samt Typdeklarationen entsteht; ohne das
+#                bekommt ein Konsument beim npm install ein leeres Paket
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
