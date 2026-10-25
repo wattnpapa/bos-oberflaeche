@@ -2,8 +2,7 @@
  * Herkunft: Erfassungsbogen `src/app/anzeige-modus.ts` (Commit 441811c).
  * Geändert für @bos/oberflaeche: Die Kennfarbe ohne offenen Bogen ist nicht
  * mehr fest verdrahtet (Erfassungsbogen Dienstblau #12275e, Meldekopf Petrol
- * #0f4c5c). Sie kommt aus dem `<meta name="theme-color">` der App, so wie die
- * App ihn ausliefert, oder ausdrücklich über `standardThemeFarbeSetzen`.
+ * #0f4c5c). Die App setzt sie beim Start über `standardThemeFarbeSetzen`.
  *
  * Anzeigemodus der Oberfläche — vier Umgebungen, vier Darstellungen:
  *  - „standard": die normale, helle Ansicht.
@@ -90,9 +89,14 @@ function anwenden(m: AnzeigeModus): void {
 export const NACHT_KOPF_FOND = "#221f16";
 /**
  * Kennfarbe ohne offenen Bogen. Jede App hat ihre eigene (Meta-Tag und
- * `--akzent` in ihrer index.html); hier steht deshalb keine. Ohne ausdrückliche
- * Angabe gilt der Inhalt, mit dem der Meta-Tag ausgeliefert wurde — er wird
- * beim ersten Abgleich gemerkt, bevor dieser Abgleich ihn überschreibt.
+ * `--akzent` in ihrer index.html); hier steht deshalb keine. Die App setzt sie
+ * beim Start mit `standardThemeFarbeSetzen`, VOR `wendeAnzeigeModusAn`.
+ *
+ * Ohne ausdrückliche Angabe gilt der Inhalt, den der Meta-Tag beim ersten
+ * Abgleich trägt. Das ist nur dann die Kennfarbe, wenn nichts ihn vorher
+ * umgefärbt hat — das Boot-Skript beider Apps setzt ihn nachts aber schon vor
+ * dem Bundle auf den dunklen Kopf-Ton. Deshalb ist der Rückfall nur ein Netz,
+ * nicht der Weg.
  */
 let standardThemeFarbe: string | null = null;
 

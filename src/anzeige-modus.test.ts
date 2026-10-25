@@ -37,9 +37,20 @@ describe("Kennfarbe ohne offenen Bogen", () => {
     return document.querySelector("meta")!;
   }
 
-  it("nimmt die Farbe, mit der die App ihren Meta-Tag ausliefert — auch nach einem Wechsel in den Nacht-Modus und zurück", () => {
+  it("ohne ausdrückliche Angabe gilt, was der Meta-Tag beim ersten Abgleich trägt — auch nach Nacht-Modus und zurück", () => {
     const m = meta("#0f4c5c");
     document.documentElement.classList.add("nacht-modus");
+    themeFarbeAbgleichen();
+    expect(m.content).toBe(NACHT_KOPF_FOND);
+    document.documentElement.classList.remove("nacht-modus");
+    themeFarbeAbgleichen();
+    expect(m.content).toBe("#0f4c5c");
+  });
+
+  it("eine gesetzte Kennfarbe gilt auch, wenn das Boot-Skript den Meta-Tag nachts schon umgefärbt hat", () => {
+    const m = meta(NACHT_KOPF_FOND); // Boot-Skript der App, Nacht-Modus
+    document.documentElement.classList.add("nacht-modus");
+    standardThemeFarbeSetzen("#0f4c5c");
     themeFarbeAbgleichen();
     expect(m.content).toBe(NACHT_KOPF_FOND);
     document.documentElement.classList.remove("nacht-modus");
