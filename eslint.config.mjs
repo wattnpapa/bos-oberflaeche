@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 
 // Die Regeln für den Oberflächen-Baustein (ADR-004 der Meldekopf-App, in
 // Anlehnung an ADR-003 des Erfassungsbogens): React und DOM sind erlaubt,
@@ -78,6 +79,34 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // Die Hook-Regeln, auf die sich die übernommenen Dateien schon in ihren
+    // Kommentaren beziehen (`react-hooks/exhaustive-deps`).
+    files: ["src/**/*.tsx", "src/**/*.ts"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
+  {
+    // Übernommener, in acht Audit-Runden geprüfter Code aus dem
+    // Erfassungsbogen, der dort ohne typgeprüftes Lint lief: Ein Klick-Handler
+    // darf eine Rückfrage abwarten (`onClick={async () => …}`), React 19 zählt
+    // Promises zu ReactNode, und eine überflüssige Typzusicherung ist kein
+    // Fehler im Verhalten. Diese drei Regeln würden nur Umschreiben ohne
+    // Befund erzwingen.
+    files: ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: { attributes: false }, checksConditionals: false }],
+      "@typescript-eslint/no-unnecessary-type-assertion": "off",
+    },
+  },
+  {
+    // Tests: `async` ohne `await` ist bei Testing Library üblich (act()).
+    files: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    rules: { "@typescript-eslint/require-await": "off" },
   },
   {
     files: ["*.mjs", "*.ts", "vitest.config.ts"],

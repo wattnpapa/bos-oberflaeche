@@ -1,10 +1,10 @@
 /**
  * @bos/oberflaeche — gemeinsame Oberfläche von Erfassungsbogen und Meldekopf.
  *
- * Entsteht in Phase 1 der Meldekopf-Übernahme aus dem Erfassungsbogen
+ * Entstanden in Phase 1 der Meldekopf-Übernahme aus dem Erfassungsbogen
  * (docs/uebernahme-aus-erfassungsbogen.md im Repo wattnpapa/meldekopf,
- * Abschnitt C). Bis dahin ist dieses Paket leer; die Module kommen mit ihren
- * Tests und Kopfkommentaren aus `src/app/` des Erfassungsbogens:
+ * Abschnitt C). Die Module kamen mit ihren Tests und Kopfkommentaren aus
+ * `src/app/` des Erfassungsbogens (Commit 441811c):
  *
  *   dialoge, modal-overlay          Dialogschicht statt Systemdialoge
  *   anzeige-modus, anzeige-schalter Hell/Dunkel/Feld/Nacht
@@ -14,7 +14,8 @@
  *   daumen-quittung, quittung, einlese-quittung
  *   eintrag-bewegung, kartenstapel
  *   fehlerfaenger, fehler-im-bild, feste-warnung
- *   bausteine (Auswahl aus schritte/bausteine.tsx)
+ *   werkzeuge, arbeitet, tabellen-scroll
+ *   bausteine (Auswahl aus schritte/bausteine.tsx), zahl-eingabe
  *   stil/                           Design-Token und Grundlayout (CSS)
  *
  * Importiert wird modulgenau (`@bos/oberflaeche/dialoge`), nicht über diese

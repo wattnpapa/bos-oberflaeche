@@ -22,13 +22,35 @@ jobs:
   pruefen:
     runs-on: ubuntu-latest
     steps:
+      # Das Format liegt als Nachbarordner daneben (devDependency
+      # `file:../eeb-format`), gebaut, wie im README beschrieben. Gepinnt auf
+      # den Stand, den beide Apps einbinden; kein automatisches Folgen von
+      # `main` (Regel 6).
       - uses: actions/checkout@v4
+        with:
+          path: bos-oberflaeche
+      - uses: actions/checkout@v4
+        with:
+          repository: wattnpapa/eeb-format
+          ref: eb58ad69ba54f2c3497e08bcc87773efb0adf890
+          path: eeb-format
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            bos-oberflaeche/package-lock.json
+            eeb-format/package-lock.json
+      - name: eeb-format bauen
+        working-directory: eeb-format
+        run: npm ci && npm run build
       - run: npm ci
+        working-directory: bos-oberflaeche
       - run: npm run lint
+        working-directory: bos-oberflaeche
       - run: npm run typecheck
+        working-directory: bos-oberflaeche
       - run: npm test
+        working-directory: bos-oberflaeche
       - run: npm run build
+        working-directory: bos-oberflaeche
