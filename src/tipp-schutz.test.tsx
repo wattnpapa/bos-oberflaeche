@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/tipp-schutz.test.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/tipp-schutz.test.tsx` (Commit 1d7ed5f).
  *
  * Ortssperre gegen den zögernden zweiten Tipp (Audit Runde 3, R3-S5, R3-G2):
  * Nach einem Austausch unter dem Finger nimmt die Stelle eine Weile nichts an,
@@ -11,6 +11,7 @@ import {
   ORTSSPERRE_MS,
   ORTSSPERRE_RADIUS_PX,
   QUITTUNG_SPERRE_MS,
+  SCHRITTWECHSEL_SPERRE_MS,
   SEITENWECHSEL_SPERRE_MS,
   ortSperren,
   tippSchutzZuruecksetzen,
@@ -329,8 +330,8 @@ describe("Sperre hinter der Rückfrage (R8-H5, R8-S4, R8-D5)", () => {
     expect(dahinterGetroffen).toHaveBeenCalledTimes(1);
   });
 
-  it("die Sperre unter einer Quittung dauert länger als 1,5 s (R8-D5)", () => {
-    expect(QUITTUNG_SPERRE_MS).toBeGreaterThanOrEqual(2500);
+  it("die Sperre unter einer schwebenden Quittung dauert so lang wie die Ortssperre; „Rückgängig“ selbst ist nie gesperrt (R8-D5, R18-G3)", () => {
+    expect(QUITTUNG_SPERRE_MS).toBe(ORTSSPERRE_MS);
   });
 });
 
@@ -365,5 +366,30 @@ describe("Sperre nach einem Wechsel der Ansicht (R9-H5)", () => {
       knopf.remove();
       tippSchutzZuruecksetzen();
     }
+  });
+});
+
+describe("Sperre nach einem Schrittwechsel (R10-S2)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("dauert 0,6 s (R18): Doppeltipp (bis 500 ms) gesperrt, gleichmäßiges Weitertippen ab 1 s angenommen", () => {
+    expect(SCHRITTWECHSEL_SPERRE_MS).toBe(600);
+    expect(SCHRITTWECHSEL_SPERRE_MS).toBeLessThan(ORTSSPERRE_MS);
+    tippSchutzZuruecksetzen();
+    const knopf = document.createElement("button");
+    const getroffen = vi.fn();
+    knopf.addEventListener("click", getroffen);
+    document.body.appendChild(knopf);
+    const echt = Date.now();
+    const uhr = vi.spyOn(Date, "now").mockReturnValue(echt);
+    tipp(knopf, 200, 580);
+    ortSperren(SCHRITTWECHSEL_SPERRE_MS);
+    uhr.mockReturnValue(echt + 500);
+    tipp(knopf, 200, 580); // Doppeltipp: gesperrt
+    expect(getroffen).toHaveBeenCalledTimes(1);
+    uhr.mockReturnValue(echt + 1000);
+    tipp(knopf, 200, 580); // im Takt von einer Sekunde: kommt an
+    expect(getroffen).toHaveBeenCalledTimes(2);
+    knopf.remove();
   });
 });

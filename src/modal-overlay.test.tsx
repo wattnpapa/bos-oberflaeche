@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/modal-overlay.test.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/modal-overlay.test.tsx` (Commit 1d7ed5f).
  *
  * QR-Vollbild und Scanner waren nicht modal: Fokus blieb dahinter, die Seite
  * rollte mit, nach dem Schließen stand der Fokus auf <body> (Audit Runde 2,
@@ -129,9 +129,12 @@ describe("Folgerückfrage übernimmt den Eintrag der vorigen (R6-N1)", () => {
 describe("Fenster der Startseite tragen einen Verlaufseintrag (R6-S3)", () => {
   it("legt beim Öffnen eines beliebigen Dialogs einen Eintrag an und verbraucht ihn beim Schließen", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // Aufräumen im finally: Der popstate-Listener darf die Datei nicht überleben, sonst fasst ein
+    // spätes popstate aus einem anderen Test nach dem Abbau der Umgebung ins Leere (Flake in CI).
+    let abhaengen: () => void = () => {};
     try {
       history.replaceState({ eeb: { schritt: 0 }, eebErste: true }, "");
-      dialogVerlaufVerdrahten();
+      abhaengen = dialogVerlaufVerdrahten();
       const d = document.createElement("dialog");
       document.body.appendChild(d);
       const zurueck = vi.spyOn(history, "back").mockImplementation(() => {});
@@ -145,6 +148,7 @@ describe("Fenster der Startseite tragen einen Verlaufseintrag (R6-S3)", () => {
       zurueck.mockRestore();
       d.remove();
     } finally {
+      abhaengen();
       vi.useRealTimers();
       history.replaceState(null, "");
     }

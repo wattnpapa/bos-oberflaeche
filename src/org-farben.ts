@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/org-farben.ts` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/org-farben.ts` (Commit 1d7ed5f).
  *
  * Kennfarben je Organisation — die EINE Quelle für PDF und Oberfläche.
  *
@@ -62,6 +62,24 @@ export function orgFarbe(org: OrganisationsTyp): { balken: string; schrift: stri
   const balken = ORG_FARBEN[org] ?? NEUTRAL;
   const hell = helligkeit(balken) > 0.6;
   return { balken, schrift: hell ? "#000000" : "#ffffff", akzent: hell ? NEUTRAL : balken };
+}
+
+/**
+ * Kennfarben auf dem gedruckten Bogen. Für das THW gilt dort das Blau des
+ * Titelbalkens der THWin-Papiervorlage (06-*_Erfassungsbogen.dotx:
+ * w:fill="003399", in der gedruckten Vorlage als RGB 0 / 51 / 153 gemessen),
+ * damit ein App-Bogen neben einem Word-Bogen gleich aussieht. Die Oberfläche
+ * behält ihr dunkleres THW-Blau aus {@link ORG_FARBEN}: Ihre Kontrastwerte sind
+ * in den Audits gemessen, und das Papier braucht sie nicht.
+ */
+const PAPIER_FARBEN: Partial<Record<OrganisationsTyp, string>> = {
+  [OrganisationsTyp.THW]: "#003399",
+};
+
+/** Wie {@link orgFarbe}, aber mit den Papierfarben aus {@link PAPIER_FARBEN}. */
+export function orgFarbePapier(org: OrganisationsTyp): { balken: string; schrift: string; akzent: string } {
+  const papier = PAPIER_FARBEN[org];
+  return papier ? { balken: papier, schrift: "#ffffff", akzent: papier } : orgFarbe(org);
 }
 
 // --- Ableitung der Oberflächen-Akzentfarbe -------------------------------

@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/dialoge.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/dialoge.tsx` (Commit 1d7ed5f).
  *
  * Rückfragen, Eingaben und Hinweise in der Oberfläche der App — der Ersatz für
  * `window.prompt`, `window.confirm` und `window.alert`.
@@ -19,8 +19,9 @@
  * überschreiben.
  */
 
-import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
-import { ortSperren, tippVerworfenZeigen } from "./tipp-schutz";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { istSichereGegenhandlung, ortSperren, tippVerworfenZeigen } from "./tipp-schutz";
+import { zahlMarkieren } from "./zahl-eingabe";
 import { ersteEbeneBetreten, ersteEbeneVerlassen } from "./modal-overlay";
 
 /** Ein Eingabefeld einer Abfrage. `name` ist der Schlüssel im Ergebnis. */
@@ -36,7 +37,14 @@ export type Eingabefeld = {
   zahl?: boolean;
   /** Gesetzt = Auswahlliste statt Textfeld (Wert = `wert` des Eintrags). */
   auswahl?: { wert: string; label: string }[];
+  /** Dieses Feld bekommt beim Öffnen den Fokus (sonst das erste) — „Ort eintragen…" landet im Feld „Ort" (R17-S4). */
+  fokus?: boolean;
 };
+
+/** Index des Felds, das beim Öffnen den Fokus bekommt: das mit `fokus`, sonst das erste. */
+export function fokusIndex(felder: Eingabefeld[]): number {
+  return Math.max(0, felder.findIndex((f) => f.fokus));
+}
 
 /** Ein benannter Weg in einer Rückfrage — mehr als OK/Abbrechen. */
 export type Antwortweg = {
@@ -45,8 +53,12 @@ export type Antwortweg = {
   label: string;
   /** Erklärt, was dieser Weg bedeutet — steht unter dem Knopf. */
   hinweis?: ReactNode;
+  /** Ein Satz unter dem Knopf im festen Fuß statt eines Eintrags in der Liste des Rumpfs (R18-S4); ersetzt `hinweis`. */
+  kurz?: string;
   /** Zerstörende Wahl: Knopf in der Alarmfarbe. */
   gefahr?: boolean;
+  /** Harmloser Weg zurück zum Eintragen (nimmt nichts weg): nie gesperrt, nie gedämpft (R19-S5). */
+  sicher?: boolean;
 };
 
 type Eingabeabfrage = {
@@ -55,6 +67,8 @@ type Eingabeabfrage = {
   hinweis?: ReactNode;
   felder: Eingabefeld[];
   ok: string;
+  /** Laufende Zeile unter den Feldern (z. B. eine Summe), aus den aktuellen Werten gerechnet (R12-H2). */
+  zeile?: (werte: Record<string, string>) => string;
 };
 
 type Wahlabfrage = {
@@ -118,8 +132,9 @@ export function frageFelder(a: {
   felder: Eingabefeld[];
   hinweis?: ReactNode;
   ok?: string;
+  zeile?: (werte: Record<string, string>) => string;
 }): Promise<Record<string, string> | null> {
-  return stellen({ art: "eingabe", titel: a.titel, hinweis: a.hinweis, felder: a.felder, ok: a.ok ?? "Übernehmen" });
+  return stellen({ art: "eingabe", titel: a.titel, hinweis: a.hinweis, felder: a.felder, ok: a.ok ?? "Übernehmen", zeile: a.zeile });
 }
 
 /** Ein einzelnes Feld erfragen — der direkte Ersatz für `window.prompt`. */
@@ -208,6 +223,20 @@ export function zeigeHinweis(a: {
   return stellen({ art: "hinweis", titel: a.titel, text: a.text, kopiertext: a.kopiertext, ok: a.ok ?? "Alles klar" });
 }
 
+/**
+ * Ein Feld im rollenden Rumpf eines Dialogs so weit ins Bild rollen, dass es nicht unter der festen Knopfzeile
+ * liegt (R10-L1). `nearest`: Passt es schon, bleibt alles stehen; die Frage steht nur dann nicht mehr ganz oben,
+ * wenn das Feld sonst verdeckt wäre.
+ */
+function feldInsBild(el: Element | null | undefined): void {
+  if (!el) return;
+  // Mit Beschriftung, solange beides in den Rumpf passt; sonst das Feld selbst.
+  const label = el.closest("label");
+  const rumpf = el.closest(".abfrage-rumpf");
+  const ziel = label && rumpf && label.getBoundingClientRect().height <= rumpf.clientHeight ? label : el;
+  ziel.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
+
 /** So viele benannte Wege stehen im festen Fuß der Rückfrage; mehr rollen im Rumpf. */
 const WEGE_IM_FUSS = 3;
 
@@ -230,7 +259,7 @@ const WEGE_IM_FUSS = 3;
  * Prellschutz sofort.
  */
 // Der Prüfstand (features/support/haken.ts) setzt ihn vor dem Laden auf 0.
-let prellschutzMs: number = (globalThis as { __EEB_PRELLSCHUTZ_MS?: number }).__EEB_PRELLSCHUTZ_MS ?? 450;
+let prellschutzMs: number = (globalThis as { __EEB_PRELLSCHUTZ_MS?: number }).__EEB_PRELLSCHUTZ_MS ?? 350;
 
 /** Für Tests: Prellschutz setzen (0 = aus). Gibt den alten Wert zurück. */
 export function prellschutzSetzen(ms: number): number {
@@ -264,13 +293,23 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
   const rumpf = useRef<HTMLDivElement>(null);
   const geoeffnetUm = useRef(Date.now());
   const eigeneEbene = useRef(false);
+  // Mit zerstörender Wahl länger: Ein zögernder Zweittipp kam bis ~0,6 s später (R4-G1); weil die
+  // Ortssperre die Knöpfe der Rückfrage nicht mehr erfasst (R8-H5), trägt der Prellschutz das allein.
+  // R18: 0,65 s statt 0,8 s (und 0,35 s statt 0,45 s), dafür sichtbar: Die gesperrten Antworten stehen gedämpft da.
+  const sperrDauer = prellschutzMs === 0 ? 0 : abfrage.art === "wahl" && abfrage.wege.some((w) => w.gefahr) ? Math.max(prellschutzMs, 650) : prellschutzMs;
+  const [wartet, setWartet] = useState(sperrDauer > 0 && abfrage.art !== "hinweis");
+  useEffect(() => {
+    if (!wartet) return;
+    const uhr = setTimeout(() => setWartet(false), sperrDauer);
+    return () => clearTimeout(uhr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nur beim Öffnen
+  }, []);
 
   /** Zeiger-Klicks kurz nach dem Öffnen verschlucken (siehe `prellschutzMs`). */
   function prellschutz(e: MouseEvent<HTMLFormElement>) {
-    // Mit zerstörender Wahl länger: Ein zögernder Zweittipp kam bis ~0,6 s später (R4-G1); weil die
-    // Ortssperre die Knöpfe der Rückfrage nicht mehr erfasst (R8-H5), trägt der Prellschutz das allein.
-    const dauer = prellschutzMs === 0 ? 0 : abfrage.art === "wahl" && abfrage.wege.some((w) => w.gefahr) ? Math.max(prellschutzMs, 800) : prellschutzMs;
-    if (e.detail > 0 && Date.now() - geoeffnetUm.current < dauer) {
+    // „Abbrechen", „Schließen" und „Verstanden" nehmen nichts weg: nie gesperrt (R18-S3, D2, H4, E1).
+    if (istSichereGegenhandlung(e.target)) return;
+    if (e.detail > 0 && Date.now() - geoeffnetUm.current < sperrDauer) {
       e.preventDefault();
       e.stopPropagation();
       // Der verworfene Tipp sagt es: „Einen Moment …" auf dem Knopf, nicht im Text (R9-S2).
@@ -316,6 +355,8 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
     // Die Frage steht beim Öffnen zuerst im Bild, auch bei großer Schrift.
     rumpf.current?.scrollTo?.(0, 0);
     if (dialog.current) dialog.current.scrollTop = 0;
+    // Eingabefeld ins Bild rollen: Bei Zoom 200 % lag das Feld unter der festen Knopfzeile (R10-L1).
+    feldInsBild(erstes.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- nur beim Öffnen; jede Abfrage hat ein eigenes Fenster
   }, []);
 
@@ -367,7 +408,7 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
   }
 
   const abbrechen = (
-    <button type="button" onClick={() => dialog.current?.close("")}>
+    <button type="button" data-sicher="" onClick={() => dialog.current?.close("")}>
       Abbrechen
     </button>
   );
@@ -383,12 +424,16 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
       <button
         type="submit"
         value={w.wert}
-        className={w.gefahr ? "gefahr" : i === 0 ? "primaer" : ""}
-        aria-describedby={wegeImFuss && w.hinweis ? `${idBasis}-w${i}` : undefined}
+        className={`${w.gefahr ? "gefahr" : i === 0 ? "primaer" : ""}${wartet && !w.sicher ? " wartet" : ""}`.trim()}
+        aria-disabled={(wartet && !w.sicher) || undefined}
+        data-sicher={w.sicher ? "" : undefined}
+        style={wartet && !w.sicher ? ({ "--wartet-ms": `${sperrDauer}ms` } as CSSProperties) : undefined}
+        aria-describedby={wegeImFuss && (w.hinweis || w.kurz) ? `${idBasis}-w${i}` : undefined}
       >
         {w.label}
       </button>
       {!wegeImFuss && w.hinweis && <p className="hinweis">{w.hinweis}</p>}
+      {wegeImFuss && w.kurz && <p className="hinweis weg-kurz" id={`${idBasis}-w${i}`}>{w.kurz}</p>}
     </div>
   );
 
@@ -416,6 +461,7 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
                     aria-label={f.label}
                     value={werte[f.name] ?? ""}
                     onChange={(e) => setWerte({ ...werte, [f.name]: e.target.value })}
+                    onFocus={(e) => feldInsBild(e.currentTarget)}
                   >
                     {f.auswahl.map((o) => (
                       <option key={o.wert} value={o.wert}>
@@ -425,35 +471,50 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
                   </select>
                 ) : f.mehrzeilig ? (
                   <textarea
-                    ref={i === 0 ? merkeErstes : undefined}
+                    ref={i === fokusIndex(abfrage.felder) ? merkeErstes : undefined}
                     rows={4}
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={werte[f.name] ?? ""}
                     placeholder={f.platzhalter}
                     onChange={(e) => setWerte({ ...werte, [f.name]: e.target.value })}
+                    onFocus={(e) => feldInsBild(e.currentTarget)}
                   />
                 ) : (
                   <input
-                    ref={i === 0 ? merkeErstes : undefined}
+                    ref={i === fokusIndex(abfrage.felder) ? merkeErstes : undefined}
                     type="text"
+                    // Namen, Orte, Rufnamen: keine Autokorrektur, keine Rechtschreibprüfung (R17-H2).
+                    autoCorrect="off"
+                    spellCheck={false}
                     {...(f.zahl ? { inputMode: "numeric" as const } : {})}
                     enterKeyHint={i < abfrage.felder.length - 1 ? "next" : "done"}
                     value={werte[f.name] ?? ""}
                     placeholder={f.platzhalter}
                     onChange={(e) => setWerte({ ...werte, [f.name]: e.target.value })}
+                    onFocus={(e) => {
+                      feldInsBild(e.currentTarget);
+                      if (f.zahl) zahlMarkieren(e); // alle Zahlenfelder des Dialogs gleich: Antippen markiert (R16-S1)
+                    }}
                   />
                 )}
               </label>
             ))}
+            {abfrage.zeile && (
+              <p className="dialog-zeile" role="status" aria-live="polite">
+                <strong>{abfrage.zeile(werte)}</strong>
+              </p>
+            )}
           </>
         )}
 
         {abfrage.art === "wahl" && (
           <>
             <p>{abfrage.text}</p>
-            {wegeImFuss && abfrage.wege.some((w) => w.hinweis) && (
+            {wegeImFuss && abfrage.wege.some((w) => w.hinweis && !w.kurz) && (
               <ul className="abfrage-wegehinweise">
                 {abfrage.wege.map((w, i) =>
-                  w.hinweis ? (
+                  w.hinweis && !w.kurz ? (
                     <li key={w.wert} id={`${idBasis}-w${i}`}>
                       <strong>{w.label}:</strong> {w.hinweis}
                     </li>
@@ -467,7 +528,8 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
 
         {abfrage.art === "hinweis" && (
           <>
-            {abfrage.text && <p>{abfrage.text}</p>}
+            {/* R20-H13: Ein Text mit eigenen Absätzen und Aufklapper steht in einem Block, nicht in einem Absatz (kein <p> im <p>). */}
+            {abfrage.text && (typeof abfrage.text === "string" ? <p>{abfrage.text}</p> : <div>{abfrage.text}</div>)}
             {abfrage.kopiertext && (
               <textarea
                 className="kopiertext"
@@ -491,7 +553,7 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
 
         {abfrage.art === "eingabe" && (
           <div className="abfrage-aktionen">
-            <button type="submit" value="ok" className="primaer" disabled={unvollstaendig}>
+            <button type="submit" value="ok" className={`primaer${wartet ? " wartet" : ""}`} aria-disabled={wartet || undefined} disabled={unvollstaendig} style={wartet ? ({ "--wartet-ms": `${sperrDauer}ms` } as CSSProperties) : undefined}>
               {abfrage.ok}
             </button>
             {abbrechen}
@@ -505,7 +567,7 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
                 sichtbar ab: Beide Knöpfe lagen keine zwei Fingerbreit
                 auseinander, und der obere ist der, der nichts zurücknimmt. */}
             <div className={`abfrage-aktionen${abfrage.wege.some((w) => w.gefahr) ? " abgesetzt" : ""}`}>
-              <button type="button" ref={abbruchKnopf} onClick={() => dialog.current?.close("")}>
+              <button type="button" ref={abbruchKnopf} data-sicher="" onClick={() => dialog.current?.close("")}>
                 {abfrage.abbruch}
               </button>
             </div>
@@ -514,7 +576,7 @@ function Dialogfenster({ abfrage }: { abfrage: Abfrage }) {
 
         {abfrage.art === "hinweis" && (
           <div className="abfrage-aktionen">
-            <button type="submit" value="ok" className="primaer">
+            <button type="submit" value="ok" className="primaer" data-sicher="">
               {abfrage.ok}
             </button>
           </div>

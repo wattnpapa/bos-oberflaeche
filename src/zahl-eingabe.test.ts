@@ -1,10 +1,10 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/zahl-eingabe.test.ts` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/zahl-eingabe.test.ts` (Commit 1d7ed5f).
  *
  * Zahlen aus Eingabefeldern: nie still eine andere Zahl (Audit Runde 9, R9-E1).
  */
 import { describe, expect, it } from "vitest";
-import { zahlLesen } from "./zahl-eingabe";
+import { HOECHST_LITER, HOECHST_PERSONEN, zahlLesen } from "./zahl-eingabe";
 
 describe("zahlLesen", () => {
   it("übernimmt ganze Zahlen unverändert, ohne Satz", () => {
@@ -60,5 +60,35 @@ describe("zahlLesen", () => {
       begrenzt: true,
     });
     expect(zahlLesen("0", { min: 1 }).meldung).toContain("Mindestens 1");
+  });
+});
+
+describe("zahlLesen: Einheit und Obergrenze (R10-N2, R10-S5)", () => {
+  it("liest „20 l“, „500l“ und „20 Liter“ als Zahl und sagt es", () => {
+    expect(zahlLesen("20 l", { einheit: "Liter" })).toEqual({ wert: 20, meldung: "„20 l“ gelesen als 20." });
+    expect(zahlLesen("500l").wert).toBe(500);
+    expect(zahlLesen("10 Liter").wert).toBe(10);
+    expect(zahlLesen("12 Personen", { einheit: "Personen" }).wert).toBe(12);
+    expect(zahlLesen("2,5 l", { einheit: "Liter" }).meldung).toContain("gerundet");
+  });
+
+  it("lehnt Buchstaben ohne vorangehende Zahl weiter ab und liest „-5 l“ als Minus", () => {
+    expect(zahlLesen("l").wert).toBeNull();
+    expect(zahlLesen("abc l").wert).toBeNull();
+    expect(zahlLesen("-5 l").meldung).toContain("Minus geht nicht");
+  });
+
+  it("begrenzt auf die Höchstwerte der Mengenfelder", () => {
+    expect(zahlLesen("99999999999", { max: HOECHST_LITER, einheit: "Liter" })).toEqual({
+      wert: 99999,
+      meldung: "Höchstens 99999 — dein Wert 99999999999 wurde auf 99999 gesetzt.",
+      begrenzt: true,
+    });
+    expect(HOECHST_PERSONEN).toBe(9999);
+  });
+
+  it("nennt auf Wunsch einen Satz für das leere Feld", () => {
+    expect(zahlLesen("", { leerMeldung: "Leer gilt als 0." })).toEqual({ wert: 0, meldung: "Leer gilt als 0." });
+    expect(zahlLesen("", { min: 1, leerMeldung: "x" }).meldung).toBe("");
   });
 });

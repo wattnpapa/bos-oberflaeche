@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/einlese-quittung.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/einlese-quittung.tsx` (Commit 1d7ed5f).
  *
  * Rückmeldung von „Bögen einlesen…" (Dateien) in der Einsatzansicht, direkt
  * unter den Aufnahme-Knöpfen.
@@ -20,7 +20,7 @@ export interface QuittungsEinzelheit {
   zeilen: string[];
 }
 
-export function EinleseQuittung({ fehler, meldung, einzelheiten = [] }: { fehler: string; meldung: string; einzelheiten?: QuittungsEinzelheit[] }) {
+export function EinleseQuittung({ fehler, meldung, einzelheiten = [], zurueck }: { fehler: string; meldung: string; einzelheiten?: QuittungsEinzelheit[]; zurueck?: { label: string; aktion: () => void } }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Nach dem Aufbau der Ansicht: Deren eigener Sprung an den Anfang läuft nach
@@ -36,6 +36,12 @@ export function EinleseQuittung({ fehler, meldung, einzelheiten = [] }: { fehler
   return (
     <div ref={ref} className="einlese-quittung" role={fehler ? "alert" : "status"}>
       {meldung && <p className="meldung">{meldung}</p>}
+      {/* R20-D3: Ein Weg zurück für das, was das Einlesen verändert hat (Zusammenführen zweier Sammlungen). */}
+      {zurueck && (
+        <p>
+          <button type="button" onClick={zurueck.aktion}>{zurueck.label}</button>
+        </p>
+      )}
       {/* Das Kleine eingeklappt: die Kurzfassung oben bleibt ohne Scrollen lesbar (R5-K3). */}
       {einzelheiten.map((e) => (
         <details className="einlese-einzelheit" key={e.titel}>

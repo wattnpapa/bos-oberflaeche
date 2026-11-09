@@ -15,7 +15,7 @@
  *   eintrag-bewegung, kartenstapel
  *   fehlerfaenger, fehler-im-bild, feste-warnung
  *   werkzeuge, arbeitet, tabellen-scroll
- *   bausteine (Auswahl aus schritte/bausteine.tsx), zahl-eingabe
+ *   bausteine (Auswahl aus schritte/bausteine.tsx), zahl-eingabe, schreibweise
  *   stil/                           Design-Token und Grundlayout (CSS)
  *
  * Importiert wird modulgenau (`@bos/oberflaeche/dialoge`), nicht über diese

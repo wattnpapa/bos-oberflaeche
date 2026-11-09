@@ -17,7 +17,7 @@
  * gebauten Typ.
  */
 
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import type { VokabularWert } from "@bos/eeb-format/model";
 
 /**
@@ -30,7 +30,9 @@ export interface VokabularEintrag {
   kurz: string;
   name: string;
 }
-import { zahlLesen, type ZahlRegeln } from "./zahl-eingabe";
+import { HOECHST_PERSONEN, mitGeltendemWert, zahlLesen, zahlMarkieren, type ZahlRegeln } from "./zahl-eingabe";
+import { naechstesFeld } from "./tastatur";
+import { beginntMit, falte, passtZurSuche, suchAlternativen, vokabRang } from "./schreibweise";
 
 /** Ein Hinweis mit Bezug auf einen Schritt (gleich gebaut wie `Pruefpunkt` der Apps). */
 export interface Hinweispunkt {
@@ -156,19 +158,22 @@ function VokabCombobox(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wert.code, wert.freitext]);
 
-  const suche = eingabe.trim().toLowerCase();
+  const suche = eingabe.trim();
   // Bewusst ohne Obergrenze: die Liste ist ein Ersatz für das Native-Select und
   // muss ohne Tippen jeden Eintrag zeigen — sie scrollt (max-height in der
   // CSS). Gekappt auf acht Zeilen las sich „B (ASH) … FGr I" am Handy als
   // vollständige Auswahl, und wer seine Einheit nicht sah, hielt sie für
   // nicht vorgesehen, statt zu tippen.
+  // Wortweise und ohne Umlaut-Unterschiede (R11-H2): „FGr Wasserschaden/Pumpen", das Beispiel im Feld,
+  // findet „FGr WP – Fachgruppe Wasserschaden/Pumpen", obwohl Kürzel und Name getrennt stehen.
+  // Rang statt Reihenfolge der Liste (R13-H1): das Kürzel als ganzes Wort zuerst, dann Wortanfänge, zuletzt Treffer mitten im Wort;
+  // gebräuchliche Kurzformen („BGr", „1. BGr") kommen als zusätzliche Suchtexte dazu.
   const treffer = suche
-    ? sortiert.filter(
-        (t) =>
-          t.kurz.toLowerCase().includes(suche) ||
-          t.name.toLowerCase().includes(suche) ||
-          label(t).toLowerCase().includes(suche),
-      )
+    ? sortiert
+        .map((t, i) => ({ t, i, r: Math.min(...[suche, ...suchAlternativen(suche)].map((s) => vokabRang(t.kurz, t.name, s))) }))
+        .filter((x) => x.r < 3)
+        .sort((a, b) => a.r - b.r || a.i - b.i)
+        .map((x) => x.t)
     : sortiert;
 
   const freitext = wert.code == null ? (wert.freitext ?? "").trim() : "";
@@ -204,10 +209,10 @@ function VokabCombobox(props: {
         // Direkt eingetipptes Kürzel, Label oder ausgeschriebener Name beim
         // Verlassen zum Code auflösen — ohne Groß-/Kleinschreibung und ohne
         // Leerzeichen am Rand, aber nur bei genau einem Treffer (R4-H1).
-        const klein = v.trim().toLowerCase();
-        const gleich = sortiert.filter((x) => x.name.toLowerCase() === klein || label(x).toLowerCase() === klein);
+        const klein = falte(v);
+        const gleich = sortiert.filter((x) => falte(x.name) === klein || falte(label(x)) === klein);
         const t =
-          sortiert.find((x) => label(x) === v || x.kurz.toLowerCase() === klein) ?? (gleich.length === 1 ? gleich[0] : undefined);
+          sortiert.find((x) => label(x) === v || falte(x.kurz) === klein) ?? (gleich.length === 1 ? gleich[0] : undefined);
         if (t) {
           setEingabe(label(t));
           aendern({ code: t.code });
@@ -271,7 +276,14 @@ export const KENNUNG_EINGABE = {
  * Dienststellenkontakt auf den Bogen (R2-M6). Nur „Name/Kontakt hinterlegen"
  * (Absenderkarte) meint wirklich den Gerätebesitzer und behält name/email/tel.
  */
-export const FREMDE_DATEN = { autoComplete: "off" } as const;
+export const FREMDE_DATEN = { autoComplete: "off", autoCorrect: "off", spellCheck: false } as const;
+
+/**
+ * Für Namen, Orte, Typen und Zuordnungen mit Fachwörtern („FGr“, „GrFü“, „Haßmersheim“, seltene Familiennamen):
+ * Die Tastatur unterstrich sie rot und tauschte sie beim Leertaste-Druck gegen Wörterbuchwörter aus (R13-H3).
+ * Anders als {@link KENNUNG_EINGABE} bleibt die Großschreibung am Wortanfang.
+ */
+export const NAMEN_EINGABE = { autoCorrect: "off", spellCheck: false } as const;
 
 /**
  * Die offene Vorschlagsliste soll über den festen Leisten am unteren Rand (Fußleiste des
@@ -336,8 +348,13 @@ export function VorschlagFeld<T>(props: {
   picker?: boolean;
   /** true: Kennung (Kürzel) — Großbuchstaben, ohne Autokorrektur ({@link KENNUNG_EINGABE}). */
   kennung?: boolean;
+  /**
+   * Satz unter dem Feld, solange das Feld Fokus hat, etwas getippt ist und die Liste nichts findet — statt
+   * stumm Freitext zu übernehmen (R11-H1).
+   */
+  keineTreffer?: ReactNode;
 }) {
-  const { id: feldId, wert, platzhalter, beschriftung, treffer, schluessel, zeile, tippen, waehlen, bestaetigen, verlassen, imFluss, picker, kennung } = props;
+  const { id: feldId, wert, platzhalter, beschriftung, treffer, schluessel, zeile, tippen, waehlen, bestaetigen, verlassen, imFluss, picker, kennung, keineTreffer } = props;
   const ausFeld = useContext(FeldTitel);
   const [offen, setOffen] = useState(false);
   const [aktiv, setAktiv] = useState(0);
@@ -362,6 +379,20 @@ export function VorschlagFeld<T>(props: {
     vv.addEventListener("resize", neu);
     return () => vv.removeEventListener("resize", neu);
   }, [aufgeklappt, sichtbar.length]);
+  // Die markierte Zeile bleibt beim Blättern mit den Pfeiltasten im Bild: Die
+  // Liste rollt in sich (max-height), und ab der sechsten Zeile wanderte die
+  // Markierung unsichtbar unter den Rand (Probelauf: THW-Fahrzeugtypen).
+  useEffect(() => {
+    if (!aufgeklappt) return;
+    const zeile = listeRef.current?.children[aktiv];
+    if (zeile instanceof HTMLElement && typeof zeile.scrollIntoView === "function") {
+      try {
+        zeile.scrollIntoView({ block: "nearest" });
+      } catch {
+        /* Umgebung ohne Layout */
+      }
+    }
+  }, [aktiv, aufgeklappt]);
   const nehmen = (v: T) => {
     waehlen(v);
     setOffen(false);
@@ -385,6 +416,9 @@ export function VorschlagFeld<T>(props: {
         aria-autocomplete="list"
         // Sonst legt sich die Autovervollständigung des Browsers über unsere.
         autoComplete="off"
+        // Ort, Einheitstyp, Funktion, Beruf: Fachwörter und Kürzel, keine Wörterbuchwörter (R13-H3).
+        {...NAMEN_EINGABE}
+        enterKeyHint={imFluss ? "enter" : "next"}
         {...(kennung ? KENNUNG_EINGABE : {})}
         value={wert}
         placeholder={platzhalter}
@@ -409,6 +443,13 @@ export function VorschlagFeld<T>(props: {
             const v = sichtbar[aktiv];
             if (v !== undefined) nehmen(v);
             else bestaetigen?.(wert);
+            // „Weiter" der Tastatur (R11-G1): wie in Schritt 3 und 5 zum nächsten Feld, im letzten schließt
+            // sie die Tastatur. Chip-Felder (imFluss) bleiben stehen, dort folgt oft ein weiterer Eintrag.
+            if (!imFluss && eingabeRef.current) {
+              const weiter = naechstesFeld(eingabeRef.current);
+              if (weiter) weiter.focus();
+              else eingabeRef.current.blur();
+            }
             return;
           }
           if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
@@ -435,7 +476,19 @@ export function VorschlagFeld<T>(props: {
         }}
       />
       {aufgeklappt && (
-        <ul className="vorschlaege" ref={listeRef} id={listeId} role="listbox" aria-label={`Vorschläge zu ${beschriftung ?? ausFeld ?? "der Eingabe"}`}>
+        <ul
+          className="vorschlaege"
+          ref={listeRef}
+          id={listeId}
+          role="listbox"
+          aria-label={`Vorschläge zu ${beschriftung ?? ausFeld ?? "der Eingabe"}`}
+          // Ein Mausklick auf die Rollleiste der Liste (oder das Ziehen ihres
+          // Griffs) nahm dem Feld den Fokus — blur schloss die Liste, bevor
+          // sie gerollt war (Probelauf: THW-Fahrzeugtypen mit der Maus nicht
+          // rollbar). Der Fokus bleibt im Feld; die Zeilen wählen weiterhin
+          // über ihr eigenes mousedown.
+          onMouseDown={(ev) => ev.preventDefault()}
+        >
           {sichtbar.map((v, k) => (
             // onMouseDown statt onClick, damit die Auswahl vor dem blur greift
             <li
@@ -459,13 +512,39 @@ export function VorschlagFeld<T>(props: {
       <span className="nur-vorlesen" role="status">
         {aufgeklappt ? `${sichtbar.length} ${sichtbar.length === 1 ? "Vorschlag" : "Vorschläge"}` : ""}
       </span>
+      {keineTreffer && offen && treffer.length === 0 && wert.trim().length >= 3 && (
+        <span className="hinweis kein-treffer" style={{ display: "block" }}>
+          {keineTreffer}
+        </span>
+      )}
     </span>
   );
 }
 
+/**
+ * Ein Tipp auf die Beschriftung (oder daneben) gibt der Beschriftung zufolge den Tipp an das erste bedienbare
+ * Element im Feld weiter. Bei Feldern mit Chips ist das der Knopf „<Funktion> entfernen" des ersten Chips: Ein Tipp
+ * auf die Titelzeile oder neben den Chip löschte die Funktion der Person ohne Rückfrage (R12-G1). Steht ein
+ * Knopf vor dem Eingabefeld, geht der Tipp deshalb an das Eingabefeld (Fokus), nie an den Knopf.
+ */
+export function feldTippFangen(e: MouseEvent<HTMLLabelElement>): void {
+  const ziel = e.target as Element | null;
+  if (ziel?.closest("button, input, select, textarea, a, [role='option'], [role='listbox']")) return;
+  const label = e.currentTarget;
+  const erstes = label.querySelector("button, input:not([type='hidden']), select, textarea");
+  if (!(erstes instanceof HTMLButtonElement)) return;
+  const eingabe = label.querySelector<HTMLElement>("input:not([type='hidden']), select, textarea");
+  if (!eingabe) return; // Ein Feld nur aus Knöpfen behält die Weitergabe des Tipps.
+  e.preventDefault();
+  eingabe.focus();
+}
+
 export function Feld(props: { titel: string; schmal?: boolean; klasse?: string; children: ReactNode }) {
   return (
-    <label className={["feld", props.schmal ? "schmal" : "", props.klasse ?? ""].filter(Boolean).join(" ")}>
+    <label
+      className={["feld", props.schmal ? "schmal" : "", props.klasse ?? ""].filter(Boolean).join(" ")}
+      onClick={feldTippFangen}
+    >
       {props.titel}
       <FeldTitel.Provider value={props.titel}>{props.children}</FeldTitel.Provider>
     </label>
@@ -521,7 +600,7 @@ export function useZahlEingabe(
       setzen(undefined);
       return;
     }
-    const r = zahlLesen(roh, regeln);
+    const r = mitGeltendemWert(zahlLesen(roh, regeln), zuletzt.current);
     setMeldung(r.meldung);
     setAbgelehnt(r.wert === null);
     if (r.wert === null) {
@@ -543,14 +622,31 @@ export function useZahlEingabe(
       value: text,
       "aria-invalid": abgelehnt || undefined,
       onChange: (e) => aufnehmen(e.target.value),
+      onFocus: zahlMarkieren, // Antippen markiert die Zahl: Überschreiben statt Anhängen (R16-S1)
       onBlur: () => setText(anzeige(zuletzt.current)),
     },
   };
 }
 
-/** Der Satz zu {@link useZahlEingabe}, direkt unter dem Feld. */
+/**
+ * Sammelstelle für die Sätze der Zahlenfelder einer Feldzeile (R10-M4, R10-G3): Steht sie im Baum, zeigt
+ * {@link ZahlMeldung} den Satz nicht unter dem Feld, sondern meldet ihn hier an — die Zeile sammelt alle Sätze
+ * über die volle Breite unter den Feldern. In der schmalen Feldspalte (112 px) brach er in bis zu sieben Zeilen
+ * um und verschob die Nachbarfelder.
+ */
+export const ZahlMeldungsSenke = createContext<((feld: string, text: string) => void) | null>(null);
+
+/** Der Satz zu {@link useZahlEingabe}, direkt unter dem Feld (oder gesammelt, siehe {@link ZahlMeldungsSenke}). */
 export function ZahlMeldung(props: { meldung: string; id?: string }) {
-  if (!props.meldung) return null;
+  const senke = useContext(ZahlMeldungsSenke);
+  const feld = useContext(FeldTitel) ?? "";
+  const { meldung } = props;
+  useEffect(() => {
+    if (!senke) return;
+    senke(feld, meldung);
+    return () => senke(feld, "");
+  }, [senke, feld, meldung]);
+  if (!meldung || senke) return null;
   return (
     <small className="hinweis warnung-text zahl-meldung" id={props.id} role="status">
       {props.meldung}
@@ -593,8 +689,8 @@ export function staerkeVorlesen(s: { fuehrer: number; unterfuehrer: number; mann
  */
 export function Stepper(props: { titel: string; wert: number; setzen: (n: number) => void; min?: number }) {
   const min = props.min ?? 0;
-  const setze = (n: number) => props.setzen(Math.max(min, n));
-  const { eingabe, meldung } = useZahlEingabe(props.wert, (n) => setze(n ?? 0), { min, einheit: "Zahlen" });
+  const setze = (n: number) => props.setzen(Math.min(HOECHST_PERSONEN, Math.max(min, n)));
+  const { eingabe, meldung } = useZahlEingabe(props.wert, (n) => setze(n ?? 0), { min, max: HOECHST_PERSONEN, einheit: "Zahlen" });
   return (
     <div className="stepper-feld">
       <span className="stepper-titel">{props.titel}</span>

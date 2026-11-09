@@ -1,11 +1,13 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/daumen-quittung.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/daumen-quittung.tsx` (Commit 1d7ed5f).
  *
  * Quittung mit Rückweg, fest am unteren Bildrand (Daumenbereich), mit
  * „Rückgängig" in voller Knopfgröße (Audit Runde 2, R2-H4). Sie bleibt, bis
- * die nächste Quittung sie ersetzt, sie geschlossen wird oder die Ansicht
- * wechselt — ein Zeitablauf nähme den einzigen Rückweg, während der Helfer
- * gerade woanders hinsieht.
+ * die nächste Quittung sie ersetzt, sie geschlossen wird, die Ansicht
+ * wechselt oder `QUITTUNG_ENDE_NACH_MS` (9 s, mit „Details" 30 s) vergangen sind (R18, R19).
+ *
+ * Runde 19: kompakt (Kurzfassung in einer bis zwei Zeilen, „Rückgängig", „✕"; am Telefon höchstens ca. 12 % der Bildhöhe), der
+ * volle Satz hinter „Details" und für Vorleseprogramme sofort; „Rückgängig" und „✕" liegen 24 px auseinander.
  *
  * Runde 3 (R3-G2, R3-S5, R3-G1, R3-D3):
  * - höchstens zwei Zeilen Text: Die Handlung („Abgerückt 20:39") steht vorn,
@@ -18,11 +20,22 @@
  * - über einer festen Fußleiste (Assistent) steht sie über ihr, nicht darauf;
  * - ohne `onRueckgaengig` quittiert sie nur (etwa ein Zurücknehmen).
  *
- * `prellschutz`: Die Knöpfe nehmen erst nach PRELLSCHUTZ_MS an.
+ * Runde 18: „Rückgängig" und „✕" nehmen sofort an (nie gesperrt, R18-G3); der Text steht immer vollständig da (kein
+ * Abschneiden, R18-S2/N2/D5); nach `QUITTUNG_ENDE_NACH_MS` verschwindet die Leiste ganz; „✕" liegt mindestens 12 px
+ * neben „Rückgängig" (R18-D6).
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { PRELLSCHUTZ_MS, QUITTUNG_SPERRE_MS, letzterTippOrt, ortSperren } from "./tipp-schutz";
+import { QUITTUNG_SPERRE_KURZ_MS, QUITTUNG_SPERRE_MS, letzterTippOrt, ortSperren } from "./tipp-schutz";
+
+/**
+ * So lange steht die kompakte Leiste (kurzer Text, „Rückgängig", „✕", höchstens ca. 12 % der Bildhöhe am Telefon); danach
+ * verschwindet sie ganz (R18-S2, H1, W1, A8; R19: 9 statt 30 s, A3/E5/W12/L6). Die Handlung bleibt über Papierkorb, Historie
+ * der Einheit und die Kopfzeile erreichbar; die Leiste steht nie dauerhaft vor Knöpfen der Liste.
+ */
+export const QUITTUNG_ENDE_NACH_MS = 9_000;
+/** Wer „Details" aufklappt, will lesen: Die Leiste steht dann länger (R19-A3/N12). */
+export const QUITTUNG_DETAILS_ENDE_NACH_MS = 30_000;
 
 /** Die Karte (Einheit, Person, Fahrzeug) unter der getippten Stelle, durch die Leiste hindurch. */
 function darunterLiegendeKarte(tipp: { x: number; y: number }, leiste: HTMLElement): HTMLElement | null {
@@ -35,23 +48,41 @@ function darunterLiegendeKarte(tipp: { x: number; y: number }, leiste: HTMLEleme
   return null;
 }
 
-export function DaumenQuittung({ children, prellschutz = false, onRueckgaengig, rueckgaengigName, onSchliessen }: {
+export function DaumenQuittung({ children, kurz, sperreKurz = false, onRueckgaengig, rueckgaengigName, onSchliessen, mehrzeilig = false }: {
   children: ReactNode;
+  /** „Rückgängig" nimmt etwas Harmloses zurück: Die Stelle unter der Leiste sperrt nur so lang wie der Prellschutz (R17-D3). */
+  sperreKurz?: boolean;
+  /** Kurzfassung für die kompakte Leiste (R19: eine bis zwei Zeilen); den vollen Text zeigt „Details". */
+  kurz?: ReactNode;
+  /** Nur noch die Klasse `quittung-mehrzeilig` (R11-M3); der Text steht seit R18 in jedem Fall vollständig da. */
+  mehrzeilig?: boolean;
+  /** Ohne Wirkung seit R18: „Rückgängig" und „✕" sind nie gesperrt (R18-G3). */
   prellschutz?: boolean;
   onRueckgaengig?: () => void;
   /** Voller Name des Rückgängig-Knopfs für Vorlesesoftware und Tooltip, wenn „Rückgängig" allein zu wenig sagt (R5-E3). */
   rueckgaengigName?: string;
   onSchliessen: () => void;
 }) {
-  const [bereit, setBereit] = useState(!prellschutz);
   const leiste = useRef<HTMLDivElement>(null);
   // Nur einmal je Leiste rollen (StrictMode ruft den Effekt doppelt auf).
   const gerollt = useRef(false);
+  // Nach QUITTUNG_ENDE_NACH_MS verschwindet die Leiste ganz (R18-S2, R19): Sie stand sonst stundenlang da.
+  const schliessen = useRef(onSchliessen);
+  schliessen.current = onSchliessen;
+  // R19: kompakt (Kurzfassung, eine bis zwei Zeilen) und „Details" (voller Text). Ohne `kurz` steht der volle Text da.
+  const [offen, setOffen] = useState(false);
+  const hatDetails = kurz != null;
   useEffect(() => {
-    if (bereit) return;
-    const uhr = setTimeout(() => setBereit(true), PRELLSCHUTZ_MS);
+    const uhr = setTimeout(() => schliessen.current(), offen ? QUITTUNG_DETAILS_ENDE_NACH_MS : QUITTUNG_ENDE_NACH_MS);
     return () => clearTimeout(uhr);
-  }, [bereit]);
+  }, [offen]);
+  useLayoutEffect(() => {
+    // Die Seite hält die jeweilige Höhe frei (auch nach dem Auf- und Zuklappen von „Details").
+    const el = leiste.current;
+    if (el && el.getBoundingClientRect().height > 0) {
+      document.documentElement.style.setProperty("--quittung-hoehe", `${Math.round(el.getBoundingClientRect().height + 16)}px`);
+    }
+  }, [offen]);
   useLayoutEffect(() => {
     const el = leiste.current;
     if (!el) return;
@@ -62,14 +93,42 @@ export function DaumenQuittung({ children, prellschutz = false, onRueckgaengig, 
     const hoehe = window.innerHeight || wurzel.clientHeight;
     if (navOben != null && navOben > 0 && navOben < hoehe) {
       el.style.bottom = `${Math.round(hoehe - navOben + 8)}px`;
+    } else {
+      el.style.bottom = ""; // eine schwebende Leiste (R17-S11) rastet beim erneuten Messen unten ein
     }
-    const r = el.getBoundingClientRect();
+    let r = el.getBoundingClientRect();
     wurzel.style.setProperty("--quittung-hoehe", `${Math.round(r.height + 16)}px`);
     // Ging die Leiste unter dem Finger auf: diese Stelle sperren, und was
     // eben getippt wurde, samt den Knöpfen derselben Karte über die Leiste
     // rollen — höchstens so weit, dass die getippte Stelle im Bild bleibt.
     const tipp = gerollt.current ? null : letzterTippOrt();
     gerollt.current = true;
+    // R17-S11: Läge die Leiste auf dem Knopf, den der Finger eben getippt hat, schwebt sie stattdessen direkt darüber. Die
+    // Seite springt dann nicht mehr (vorher rollte sie bis zu 144 px unter dem Finger weg), der getippte Knopf und der
+    // Gegenknopf bleiben, wo sie waren, und „Rückgängig" liegt in Daumennähe. Rollt der Nutzer, rastet sie unten ein.
+    let schwebt = false;
+    let schwebAb: (() => void) | undefined;
+    if (tipp && tipp.y >= r.top - 8 && tipp.y <= r.bottom + 8 && typeof document.elementsFromPoint === "function") {
+      const getippt = document
+        .elementsFromPoint(tipp.x, tipp.y)
+        .find((e) => !el.contains(e))
+        ?.closest<HTMLElement>("button, a[href], summary, input, select, textarea");
+      const oben = getippt?.getBoundingClientRect().top;
+      if (oben != null && oben - 8 - r.height >= 8) {
+        const unten = el.style.bottom;
+        el.style.bottom = `${Math.round(hoehe - oben + 8)}px`;
+        r = el.getBoundingClientRect();
+        schwebt = true;
+        const start = window.scrollY;
+        const einrasten = () => {
+          if (Math.abs(window.scrollY - start) < 48) return;
+          el.style.bottom = unten;
+          window.removeEventListener("scroll", einrasten);
+        };
+        window.addEventListener("scroll", einrasten, { passive: true });
+        schwebAb = () => window.removeEventListener("scroll", einrasten);
+      }
+    }
     /**
      * Ein Kartenkopf unterhalb der getippten Stelle, den die Leiste anschneidet
      * (R3-G2, Rest): Nach „Abrücken" weiter unten lag der Kopf der nächsten
@@ -85,7 +144,11 @@ export function DaumenQuittung({ children, prellschutz = false, onRueckgaengig, 
       }
       return noetig;
     };
-    if (tipp && !(tipp.y >= r.top - 8 && tipp.y <= r.bottom + 8)) {
+    // Eine Leiste ohne „Rückgängig" (Auskunft nach einem Zurücknehmen) liegt oft genau dort, wo gleich das nächste
+    // „Rückgängig" erscheint: Sie sperrt die Stelle nur kurz, sonst verwirft sie den bewussten nächsten Tipp (R17-D3).
+    const sperrDauer = sperreKurz || !onRueckgaengig ? QUITTUNG_SPERRE_KURZ_MS : QUITTUNG_SPERRE_MS;
+    if (schwebt && tipp) ortSperren(sperrDauer);
+    if (tipp && !schwebt && !(tipp.y >= r.top - 8 && tipp.y <= r.bottom + 8)) {
       const rollen = Math.min(angeschnittenerKopf(tipp.y), Math.max(0, tipp.y - 64));
       try {
         if (rollen > 0) window.scrollBy(0, Math.round(rollen));
@@ -93,8 +156,9 @@ export function DaumenQuittung({ children, prellschutz = false, onRueckgaengig, 
         /* Testumgebung ohne Layout */
       }
     }
-    if (tipp && tipp.y >= r.top - 8 && tipp.y <= r.bottom + 8) {
-      ortSperren(QUITTUNG_SPERRE_MS); // 2,5 s statt 1,5 s: Zweittipp ab 1,5 s nahm das Abrücken zurück (R8-D5)
+    if (tipp && !schwebt && tipp.y >= r.top - 8 && tipp.y <= r.bottom + 8) {
+      // 2,5 s statt 1,5 s: Zweittipp ab 1,5 s nahm das Abrücken zurück (R8-D5); bei harmlosem Rückgängig nur der Prellschutz (R17-D3).
+      ortSperren(sperrDauer);
       let rollen = tipp.y - r.top + 40;
       const karte = darunterLiegendeKarte(tipp, el);
       if (karte) {
@@ -115,22 +179,41 @@ export function DaumenQuittung({ children, prellschutz = false, onRueckgaengig, 
       }
     }
     return () => {
+      schwebAb?.();
       wurzel.style.removeProperty("--quittung-hoehe");
     };
   }, []);
   return (
-    <div className="quittung-daumen" role="status" ref={leiste}>
-      <span className="quittung-text">{children}</span>
+    <div className={`quittung-daumen${mehrzeilig ? " quittung-mehrzeilig" : ""}${offen ? " quittung-offen" : ""}`} role="status" ref={leiste}>
+      <span className="quittung-text">
+        {/* Das Vorleseprogramm bekommt den vollen Satz sofort; sehende Leser die Kurzfassung (R19), den Rest hinter „Details". */}
+        {kurz != null && !offen ? (
+          <>
+            <span className="nur-sr">{children}</span>
+            <span aria-hidden="true">{kurz}</span>
+          </>
+        ) : (
+          children
+        )}
+        {hatDetails && (
+          <>
+            {" "}
+            <button type="button" className="quittung-details" data-sicher="" aria-expanded={offen} onClick={() => setOffen(!offen)}>
+              {offen ? "Weniger" : "Details"}
+            </button>
+          </>
+        )}
+      </span>
       {/* Die beiden Knöpfe bleiben als Paar zusammen: reicht die Breite nicht
           für Text und Knöpfe, rutscht das Paar unter den Text (R4-M1) — „✕"
           steht nie allein in einer Zeile. */}
       <span className="quittung-knoepfe">
         {onRueckgaengig && (
-          <button type="button" className="quittung-rueckgaengig" disabled={!bereit} onClick={onRueckgaengig} aria-label={rueckgaengigName} title={rueckgaengigName}>
+          <button type="button" className="quittung-rueckgaengig" data-sicher="" onClick={() => onRueckgaengig()} aria-label={rueckgaengigName} title={rueckgaengigName}>
             Rückgängig
           </button>
         )}
-        <button type="button" className="quittung-schliessen" disabled={!bereit} aria-label="Quittung schließen" onClick={onSchliessen}>
+        <button type="button" className="quittung-schliessen" data-sicher="" aria-label="Quittung schließen" onClick={() => onSchliessen()}>
           ✕
         </button>
       </span>

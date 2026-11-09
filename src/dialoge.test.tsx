@@ -1,5 +1,5 @@
 /**
- * Herkunft: Erfassungsbogen `src/app/dialoge.test.tsx` (Commit 441811c), unverändert.
+ * Herkunft: Erfassungsbogen `src/app/dialoge.test.tsx` (Commit 1d7ed5f).
  *
  * Prellschutz der Rückfragen (Audit Runde 2, R2-G1): Die Rückfrage erscheint
  * oft genau unter dem Finger, der den Löschknopf getroffen hat. Ein
@@ -110,8 +110,8 @@ describe("Ortssperre der Rückfrage", () => {
     const knopf = within(dialog).getByRole("button", { name: "In den Papierkorb" });
     vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
     const start = Date.now();
-    // Der Prellschutz der Rückfrage fängt den Zweittipp bis 800 ms ab …
-    for (const ms of [520, 640]) {  // knapp unter 800 ms mit Luft für die Laufzeit des Tests
+    // Der Prellschutz der Rückfrage fängt den Zweittipp bis 650 ms ab (R18: vorher 800 ms) …
+    for (const ms of [300, 480]) {  // deutlich unter 650 ms mit Luft für die Laufzeit des Tests
       vi.setSystemTime(start + ms);
       tippAuf(knopf, 182, 404);
       expect(dialog.hasAttribute("open")).toBe(true);
@@ -282,5 +282,26 @@ describe("Rückfragen und Eingaben (Runde 9)", () => {
     void frageJaNein({ titel: "Bogen schließen?", text: "Nicht gelöscht.", ok: "Schließen, zur Startseite", fokus: "abbruch" });
     const d = await screen.findByRole("dialog", { name: "Bogen schließen?" });
     expect(document.activeElement).toBe(within(d).getByRole("button", { name: "Abbrechen" }));
+  });
+});
+
+describe("Eingabefeld im Bild (R10-L1)", () => {
+  it("rollt das erste Feld beim Öffnen und jedes Feld beim Fokus ins Bild, damit es nicht unter der Knopfzeile liegt", async () => {
+    const rollen = vi.fn();
+    const alt = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = rollen;
+    try {
+      render(<Dialogschicht />);
+      void frageFelder({ titel: "Als Vorlage speichern", felder: [{ name: "a", label: "Name der Vorlage" }, { name: "b", label: "Notiz", optional: true }] });
+      const d = await screen.findByRole("dialog", { name: "Als Vorlage speichern" });
+      // Beim Öffnen: die Beschriftung samt Feld (ein <label>), `nearest` (nur rollen, wenn nötig).
+      expect(rollen).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+      expect(rollen.mock.contexts.some((el) => (el as Element).tagName === "LABEL" || (el as Element).tagName === "INPUT")).toBe(true);
+      rollen.mockClear();
+      fireEvent.focus(within(d).getByLabelText("Notiz"));
+      expect(rollen).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = alt;
+    }
   });
 });
